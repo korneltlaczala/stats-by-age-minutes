@@ -57,7 +57,7 @@ def generate_full_report(data_subset, title_suffix, filename):
 
     # WYKRES 2: Średnia na zawodnika
     sns.barplot(data=q_stats, x='Q_birth', y='Srednia_na_Zawodnika', ax=ax_srednia, palette=red_palette, edgecolor=KSP_BLACK, linewidth=1)
-    ax_srednia.set_title('Średnia liczba minut na zawodnika', fontsize=13, fontweight='bold', color=KSP_BLACK)
+    ax_srednia.set_title('Średnia liczba minut na zawodnika urodzonego w danym kwartale', fontsize=13, fontweight='bold', color=KSP_BLACK)
     ax_srednia.set_xlabel('Kwartał urodzenia', fontweight='bold')
     ax_srednia.set_ylabel('Średnia minut', fontweight='bold')
 
@@ -81,32 +81,35 @@ def generate_full_report(data_subset, title_suffix, filename):
     smoothed = gaussian_filter1d(daily_minutes.values, sigma=10.0)
     ax_trend.plot(range(1, 367), smoothed, color=KSP_RED, lw=3.5)
     ax_trend.fill_between(range(1, 367), smoothed, alpha=0.25, color=KSP_RED)
+    ax_trend.set_xlim(-5, 371)
+    
+    # Dodanie linii kwartalnych (identycznie jak na dolnym wykresie)
+    month_days = [1, 91, 182, 274, 366] # Styczeń, Kwiecień, Lipiec, Październik, koniec roku
+    month_names = ['Styczeń', 'Kwiecień', 'Lipiec', 'Październik', 'Koniec roku']
+    y_max_trend = ax_trend.get_ylim()[1]
+    
+    for day, name in zip(month_days, month_names):
+        ax_trend.axvline(x=day, color='#e30613', linestyle=':', alpha=0.4, lw=1.5)
+        # ax_trend.text(day, y_max_trend, name, rotation=90, color='#1A171B', 
+        #               fontsize=8, alpha=0.7, fontweight='bold', ha='right', va='top')
+
+    month_midpoints = [15, 45, 75, 105, 135, 165, 195, 225, 255, 285, 315, 345]
+    month_labels_x = ['Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec', 
+                      'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień']
+    
+    ax_trend.set_xticks(month_midpoints)
+    ax_trend.set_xticklabels(month_labels_x, rotation=45, ha='right', va='top', 
+                             rotation_mode="anchor", fontsize=9, color=KSP_BLACK)
+
     ax_trend.set_title('Trend minutowy w zależności od dnia urodzenia', fontsize=13, fontweight='bold', color=KSP_BLACK)
     ax_trend.set_xlabel('Dzień urodzenia', fontweight='bold')
     ax_trend.set_ylabel('Wygładzona intensywność minut', fontweight='bold')
 
-    # NOWY WYKRES: Indywidualne minuty zawodników (z zachowaniem Twoich etykiet osi)
-    # players_sorted = data_subset.sort_values(by='DayOfYear')
-    # if not players_sorted.empty:
-    #     x_indices = np.arange(len(players_sorted))
-    #     bars = ax_indiv.bar(x_indices, players_sorted['Minutes'], color=KSP_BLACK, edgecolor=KSP_RED, width=0.7)
-        
-    #     # Podpisy na słupkach
-    #     for bar in bars:
-    #         h = bar.get_height()
-    #         if h > 0:
-    #             ax_indiv.annotate(f'{int(h)}', xy=(bar.get_x() + bar.get_width()/2, h), xytext=(0, 3), 
-    #                               textcoords="offset points", ha='center', fontsize=8, fontweight='bold')
-
-    #     ax_indiv.set_xticks(x_indices)
-    #     ax_indiv.set_xticklabels(players_sorted['Name'], rotation=45, ha='right', fontsize=8, color=KSP_BLACK)
-    #     ax_indiv.set_xlim(-0.5, len(players_sorted)-0.5)
-
-    # ax_indiv.set_title('Minuty poszczególnych zawodników (Chronologicznie wg urodzenia)', fontsize=13, fontweight='bold', color=KSP_BLACK)
-    # ax_indiv.set_xlabel('Zawodnik (Dzień roku urodzenia)', fontweight='bold')
-    # ax_indiv.set_ylabel('Minuty', fontweight='bold')
 
     # --- DOLNY WIERSZ: SPROWADZENIE DO PROPORCJONALNEJ OSI CZASU ---
+    BIG_LABELS_SIZE = 8
+    SMALL_LABELS_SIZE = 3
+    SMALL_LABEL_THRESHOLD = 50  # Próg liczby zawodników, poniżej którego stosujemy większe czcionki
     players = data_subset.sort_values(by='DayOfYear').copy()
     
     if not players.empty:
@@ -145,8 +148,9 @@ def generate_full_report(data_subset, title_suffix, filename):
             
         players['x_pos'] = x_positions
 
+        players["minutes_capped"] = players["Minutes"].clip(lower=5)
         # 5. Rysowanie słupków z odpowiednią, stałą szerokością
-        bars = ax_indiv.bar(players['x_pos'], players['Minutes'], 
+        bars = ax_indiv.bar(players['x_pos'], players['minutes_capped'], 
                             color=KSP_BLACK, edgecolor=KSP_RED, width=bar_width)
         
         # Podpisy wartości nad słupkami oraz dat na dole słupków
@@ -163,29 +167,35 @@ def generate_full_report(data_subset, title_suffix, filename):
                 pass # W razie braku locale, użyje domyślnego formatu systemowego
 
         for bar, (_, player_row) in zip(bars, players.iterrows()):
-            h = bar.get_height()
-            if h > 0:
+            h = player_row['Minutes']
+            if h >= 0:
                 # Wartość minut nad słupkiem
+                text_y_position = max(h, 360)
+                minutes_fontsize = BIG_LABELS_SIZE if n_players < SMALL_LABEL_THRESHOLD else SMALL_LABELS_SIZE + 1
                 ax_indiv.annotate(f'{int(h)}', 
-                                  xy=(bar.get_x() + bar.get_width()/2, h),
+                                  xy=(bar.get_x() + bar.get_width()/2, text_y_position),
                                   xytext=(0, 3), textcoords="offset points", 
-                                  ha='center', fontsize=8, fontweight='bold')
+                                  ha='center', fontsize=minutes_fontsize, fontweight='bold')
                 
                 # Formatowanie daty urodzenia (np. "1 stycznia 2009")
-                # %e usuwa wiodące zero z dnia miesiąca, %B to pełna nazwa miesiąca, %Y to rok
-                date_str = player_row['DOB'].strftime('%e %B %Y').strip()
+                # Zmiana na format numeryczny (np. 15.01.2007), żeby uniknąć problemów z czcionką w nazwach miesięcy
+                date_str_numeric = player_row['DOB'].strftime('%d.%m.%Y')
                 
                 # Pionowy biały napis z datą na samym dole słupka
-                txt = ax_indiv.text(bar.get_x() + bar.get_width()/2, ax_indiv.get_ylim()[1] * 0.02, date_str,
-                                    rotation=90, color='white', fontsize=7, fontweight='bold',
-                                    ha='center', va='bottom')
-                
-                # Dodajemy subtelny czarny obrys wokół białych liter, żeby były czytelne przy niskich słupkach
-                txt.set_path_effects([path_effects.withStroke(linewidth=1.5, foreground='#1A171B')])
+                if n_players < SMALL_LABEL_THRESHOLD: 
+                    txt = ax_indiv.text(bar.get_x() + bar.get_width()/2, ax_indiv.get_ylim()[1] * 0.02, date_str_numeric,
+                                        rotation=90, color='white', fontsize=7, fontweight='bold',
+                                        ha='center', va='bottom')
+                    
+                    # Dodajemy subtelny czarny obrys wokół białych liter, żeby były czytelne przy niskich słupkach
+                    txt.set_path_effects([path_effects.withStroke(linewidth=1.5, foreground='#1A171B')])
 
         # Przywrócenie skośnych nazwisk zawodników na wyliczonych pozycjach X
         ax_indiv.set_xticks(players['x_pos'])
-        ax_indiv.set_xticklabels(players['Name'], rotation=45, ha='right', fontsize=8, color=KSP_BLACK)
+        player_name_size = BIG_LABELS_SIZE if n_players < SMALL_LABEL_THRESHOLD else SMALL_LABELS_SIZE
+        ax_indiv.set_xticklabels(players['Name'], rotation=45, ha='right', fontsize=player_name_size, color=KSP_BLACK, va="top")
+        if n_players >= SMALL_LABEL_THRESHOLD:
+            ax_indiv.tick_params(axis='x', pad=0)
         
         # Ustawienie ładnych granic osi X z małym marginesem
         ax_indiv.set_xlim(min(x_positions) - bar_width, max(x_positions) + bar_width * 2)
@@ -208,8 +218,8 @@ def generate_full_report(data_subset, title_suffix, filename):
                           rotation=90, color='#1A171B', fontsize=8, alpha=0.7, 
                           fontweight='bold', ha='right', va='top')
 
-    ax_indiv.set_title('Minuty poszczególnych zawodników (Proporcjonalny wiek / Skala kwartalna)', fontsize=13, fontweight='bold', color=KSP_BLACK)
-    ax_indiv.set_xlabel('Zawodnik (Zachowane proporcje przerw między urodzinami)', fontweight='bold')
+    ax_indiv.set_title('Minuty poszczególnych zawodników w zależności od dnia urodzenia', fontsize=13, fontweight='bold', color=KSP_BLACK)
+    ax_indiv.set_xlabel('Zawodnik', fontweight='bold')
     ax_indiv.set_ylabel('Minuty', fontweight='bold')
 
 
@@ -217,9 +227,10 @@ def generate_full_report(data_subset, title_suffix, filename):
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     save_path = os.path.join("reports", filename)
-    plt.savefig(save_path, dpi=120)
+    plt.savefig(save_path, dpi=300)
     plt.close()
     print(f"✅ Wygenerowano: {save_path}")
+    print(f"   - Liczba zawodników w raporcie: {len(data_subset)}")
 
 # --- GENEROWANIE RAPORTÓW ---
 
