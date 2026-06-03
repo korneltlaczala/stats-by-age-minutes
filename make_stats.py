@@ -86,25 +86,134 @@ def generate_full_report(data_subset, title_suffix, filename):
     ax_trend.set_ylabel('Wygładzona intensywność minut', fontweight='bold')
 
     # NOWY WYKRES: Indywidualne minuty zawodników (z zachowaniem Twoich etykiet osi)
-    players_sorted = data_subset.sort_values(by='DayOfYear')
-    if not players_sorted.empty:
-        x_indices = np.arange(len(players_sorted))
-        bars = ax_indiv.bar(x_indices, players_sorted['Minutes'], color=KSP_BLACK, edgecolor=KSP_RED, width=0.7)
+    # players_sorted = data_subset.sort_values(by='DayOfYear')
+    # if not players_sorted.empty:
+    #     x_indices = np.arange(len(players_sorted))
+    #     bars = ax_indiv.bar(x_indices, players_sorted['Minutes'], color=KSP_BLACK, edgecolor=KSP_RED, width=0.7)
         
-        # Podpisy na słupkach
-        for bar in bars:
+    #     # Podpisy na słupkach
+    #     for bar in bars:
+    #         h = bar.get_height()
+    #         if h > 0:
+    #             ax_indiv.annotate(f'{int(h)}', xy=(bar.get_x() + bar.get_width()/2, h), xytext=(0, 3), 
+    #                               textcoords="offset points", ha='center', fontsize=8, fontweight='bold')
+
+    #     ax_indiv.set_xticks(x_indices)
+    #     ax_indiv.set_xticklabels(players_sorted['Name'], rotation=45, ha='right', fontsize=8, color=KSP_BLACK)
+    #     ax_indiv.set_xlim(-0.5, len(players_sorted)-0.5)
+
+    # ax_indiv.set_title('Minuty poszczególnych zawodników (Chronologicznie wg urodzenia)', fontsize=13, fontweight='bold', color=KSP_BLACK)
+    # ax_indiv.set_xlabel('Zawodnik (Dzień roku urodzenia)', fontweight='bold')
+    # ax_indiv.set_ylabel('Minuty', fontweight='bold')
+
+    # --- DOLNY WIERSZ: SPROWADZENIE DO PROPORCJONALNEJ OSI CZASU ---
+    players = data_subset.sort_values(by='DayOfYear').copy()
+    
+    if not players.empty:
+        n_players = len(players)
+        
+        # 1. Obliczamy rzeczywiste różnice w dniach między kolejnymi zawodnikami
+        # Dla pierwszego zawodnika dystans od początku roku (lub 0)
+        days_diffs = [players['DayOfYear'].iloc[0]]
+        for i in range(1, n_players):
+            diff = players['DayOfYear'].iloc[i] - players['DayOfYear'].iloc[i-1]
+            days_diffs.append(diff)
+            
+        total_days_diff = sum(days_diffs) if sum(days_diffs) > 0 else 1
+        
+        # 2. Definiujemy proporcje wykresu: słupki mają zająć 50% szerokości
+        # Przestrzeń jednego słupka przyjmujemy jako jednostkę 1.0
+        bar_width = 1.0
+        total_bars_space = n_players * bar_width  # Sumaryczna szerokość wszystkich słupków
+        
+        # Chcemy, żeby wolna przestrzeń była równa przestrzeni słupków (pół na pół)
+        total_space_available = total_bars_space
+        
+        # 3. Rozdzielamy wolną przestrzeń proporcjonalnie do przerw w dniach
+        allocated_spaces = []
+        for diff in days_diffs:
+            space = (diff / total_days_diff) * total_space_available
+            allocated_spaces.append(space)
+            
+        # 4. Wyliczamy finalne pozycje X na wykresie
+        x_positions = []
+        current_pos = 0.0
+        for space in allocated_spaces:
+            current_pos += space
+            x_positions.append(current_pos)
+            current_pos += bar_width  # Przesuwamy o szerokość słupka dla kolejnego elementu
+            
+        players['x_pos'] = x_positions
+
+        # 5. Rysowanie słupków z odpowiednią, stałą szerokością
+        bars = ax_indiv.bar(players['x_pos'], players['Minutes'], 
+                            color=KSP_BLACK, edgecolor=KSP_RED, width=bar_width)
+        
+        # Podpisy wartości nad słupkami oraz dat na dole słupków
+        import matplotlib.patheffects as path_effects
+        import locale
+        
+        # Ustawiamy polskie nazwy miesięcy dla formatowania dat
+        try:
+            locale.setlocale(locale.LC_TIME, 'pl_PL.utf8')
+        except Exception:
+            try:
+                locale.setlocale(locale.LC_TIME, 'pl_PL')
+            except Exception:
+                pass # W razie braku locale, użyje domyślnego formatu systemowego
+
+        for bar, (_, player_row) in zip(bars, players.iterrows()):
             h = bar.get_height()
             if h > 0:
-                ax_indiv.annotate(f'{int(h)}', xy=(bar.get_x() + bar.get_width()/2, h), xytext=(0, 3), 
-                                  textcoords="offset points", ha='center', fontsize=8, fontweight='bold')
+                # Wartość minut nad słupkiem
+                ax_indiv.annotate(f'{int(h)}', 
+                                  xy=(bar.get_x() + bar.get_width()/2, h),
+                                  xytext=(0, 3), textcoords="offset points", 
+                                  ha='center', fontsize=8, fontweight='bold')
+                
+                # Formatowanie daty urodzenia (np. "1 stycznia 2009")
+                # %e usuwa wiodące zero z dnia miesiąca, %B to pełna nazwa miesiąca, %Y to rok
+                date_str = player_row['DOB'].strftime('%e %B %Y').strip()
+                
+                # Pionowy biały napis z datą na samym dole słupka
+                txt = ax_indiv.text(bar.get_x() + bar.get_width()/2, ax_indiv.get_ylim()[1] * 0.02, date_str,
+                                    rotation=90, color='white', fontsize=7, fontweight='bold',
+                                    ha='center', va='bottom')
+                
+                # Dodajemy subtelny czarny obrys wokół białych liter, żeby były czytelne przy niskich słupkach
+                txt.set_path_effects([path_effects.withStroke(linewidth=1.5, foreground='#1A171B')])
 
-        ax_indiv.set_xticks(x_indices)
-        ax_indiv.set_xticklabels(players_sorted['Name'], rotation=45, ha='right', fontsize=8, color=KSP_BLACK)
-        ax_indiv.set_xlim(-0.5, len(players_sorted)-0.5)
+        # Przywrócenie skośnych nazwisk zawodników na wyliczonych pozycjach X
+        ax_indiv.set_xticks(players['x_pos'])
+        ax_indiv.set_xticklabels(players['Name'], rotation=45, ha='right', fontsize=8, color=KSP_BLACK)
+        
+        # Ustawienie ładnych granic osi X z małym marginesem
+        ax_indiv.set_xlim(min(x_positions) - bar_width, max(x_positions) + bar_width * 2)
+        
+        # 6. Orientacyjne sekcje kwartałów
+        month_days = [1, 91, 182, 274] # Styczeń, Kwiecień, Lipiec, Październik
+        month_labels = ['Styczeń (Q1)', 'Kwiecień (Q2)', 'Lipiec (Q3)', 'Październik (Q4)']
+        
+        quarter_ticks = np.interp(month_days, players['DayOfYear'], players['x_pos'])
+        
+        # Pobieramy aktualny górny limit osi Y, żeby idealnie dopasować napisy do krawędzi ramki
+        y_max = ax_indiv.get_ylim()[1]
+        
+        for q_tick, q_label in zip(quarter_ticks, month_labels):
+            ax_indiv.axvline(x=q_tick, color='#e30613', linestyle=':', alpha=0.4, lw=1.5)
+            
+            # Napisy przesunięte w dół – punkt zakotwiczenia na samej górnej krawędzi wykresu (y_max),
+            # wyrównanie pionowe ustawione na 'top' (prawa krawędź napisu po obrocie licuje się idealnie z linią ramki)
+            ax_indiv.text(q_tick, y_max, q_label, 
+                          rotation=90, color='#1A171B', fontsize=8, alpha=0.7, 
+                          fontweight='bold', ha='right', va='top')
 
-    ax_indiv.set_title('Minuty poszczególnych zawodników (Chronologicznie wg urodzenia)', fontsize=13, fontweight='bold', color=KSP_BLACK)
-    ax_indiv.set_xlabel('Zawodnik (Dzień roku urodzenia)', fontweight='bold')
+    ax_indiv.set_title('Minuty poszczególnych zawodników (Proporcjonalny wiek / Skala kwartalna)', fontsize=13, fontweight='bold', color=KSP_BLACK)
+    ax_indiv.set_xlabel('Zawodnik (Zachowane proporcje przerw między urodzinami)', fontweight='bold')
     ax_indiv.set_ylabel('Minuty', fontweight='bold')
+
+
+    # DODAJEMY MARGINESY I ZAPISUJEMY RAPORT
 
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
     save_path = os.path.join("reports", filename)
